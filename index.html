@@ -2,93 +2,273 @@
 <html lang="he">
 <head>
   <meta charset="UTF-8" />
-  <title>Locker Monitor ESP01 & ESP02</title>
+  <title>Locker Monitor – ESP01 & ESP02</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+
     body {
-      font-family: Arial, sans-serif;
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at top, #202840 0, #05060a 55%, #000 100%);
+      color: #f5f5f5;
       direction: rtl;
-      margin: 20px;
-      background: #111;
-      color: #eee;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    h1 {
-      margin-bottom: 20px;
+
+    .app {
+      max-width: 620px;
+      width: 100%;
+      padding: 24px;
     }
-    .status {
+
+    .card {
+      background: rgba(15, 17, 25, 0.95);
+      border-radius: 20px;
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.6);
+      padding: 22px 22px 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+    }
+
+    .title {
+      margin: 0 0 6px;
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      margin: 0 0 16px;
+      font-size: 13px;
+      color: #b0b7d4;
+    }
+
+    .mqtt-status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      font-size: 13px;
+      color: #c9d0ea;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(24, 27, 40, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #777;
+    }
+
+    .online-dot {
+      background: #00e676;
+      box-shadow: 0 0 8px rgba(0, 230, 118, 0.7);
+    }
+
+    .offline-dot {
+      background: #ff5252;
+      box-shadow: 0 0 8px rgba(255, 82, 82, 0.7);
+    }
+
+    .lockers {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-top: 4px;
+    }
+
+    @media (min-width: 640px) {
+      .lockers {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .locker-card {
+      border-radius: 16px;
+      padding: 14px 14px 12px;
+      background: linear-gradient(145deg, #151826, #151828);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .locker-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       margin-bottom: 10px;
     }
-    .status span {
-      font-weight: bold;
+
+    .locker-name {
+      font-size: 16px;
+      font-weight: 600;
     }
-    .online {
+
+    .status-line {
+      font-size: 12px;
+      margin-bottom: 4px;
+      color: #cfd4f0;
+    }
+
+    .status-label {
+      opacity: 0.8;
+    }
+
+    .status-value {
+      font-weight: 600;
+    }
+
+    .online-text {
       color: #00e676;
-      font-weight: bold;
     }
-    .offline {
-      color: #ff5252;
-      font-weight: bold;
+
+    .offline-text {
+      color: #ff8a80;
     }
-    button {
-      padding: 10px 20px;
-      font-size: 15px;
-      margin-top: 10px;
-      cursor: pointer;
-      border-radius: 6px;
+
+    .door-open {
+      color: #ffeb3b;
+    }
+
+    .door-closed {
+      color: #80d8ff;
+    }
+
+    .btn-row {
+      margin-top: 8px;
+      display: flex;
+      justify-content: flex-start;
+    }
+
+    .open-btn {
       border: none;
+      outline: none;
+      padding: 7px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      color: #050608;
+      background: linear-gradient(135deg, #00e676, #40c4ff);
+      box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
     }
-    .locker {
-      border: 1px solid #444;
-      border-radius: 10px;
-      padding: 15px;
-      margin-top: 15px;
-      background: #1c1c1c;
+
+    .open-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.6);
+      filter: brightness(1.05);
     }
-    .locker h2 {
-      margin-top: 0;
-      margin-bottom: 10px;
+
+    .open-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+      filter: brightness(0.96);
+    }
+
+    .btn-icon {
+      font-size: 14px;
+    }
+
+    .footer-note {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #8187a8;
+      text-align: center;
     }
   </style>
 </head>
 <body>
-  <h1>לוקרים – ESP01 + ESP02</h1>
+  <div class="app">
+    <div class="card">
+      <h1 class="title">לוקרים – ESP01 & ESP02</h1>
+      <p class="subtitle">
+        חיווי חיבור, מצב דלת ופתיחה מרחוק לשני הבקרים – הכל מעמוד אחד.
+      </p>
 
-  <div class="status">
-    סטטוס חיבור MQTT כללי: <span id="mqttStatus" class="offline">מנסה להתחבר...</span>
-  </div>
+      <div class="mqtt-status-row">
+        <span>סטטוס חיבור MQTT כללי:</span>
+        <span class="pill">
+          <span id="mqttStatusDot" class="dot offline-dot"></span>
+          <span id="mqttStatusText">מנסה להתחבר...</span>
+        </span>
+      </div>
 
-  <!-- לוקר ESP01 -->
-  <div class="locker" id="locker-ESP01">
-    <h2>ESP01</h2>
-    <div class="status">
-      סטטוס לוקר (Heartbeat): <span id="lockerOnline-ESP01" class="offline">לא ידוע</span>
-    </div>
-    <div class="status">
-      מצב דלת: <span id="doorState-ESP01">לא ידוע</span>
-    </div>
-    <button id="openBtn-ESP01">פתח לוקר ESP01 (1500ms)</button>
-  </div>
+      <div class="lockers">
+        <!-- לוקר ESP01 -->
+        <div class="locker-card" id="locker-ESP01">
+          <div class="locker-header">
+            <div class="locker-name">ESP01</div>
+            <span class="pill">
+              <span class="dot offline-dot" id="dot-ESP01"></span>
+              <span id="lockerOnline-ESP01" class="offline-text">לא מחובר</span>
+            </span>
+          </div>
+          <div class="status-line">
+            <span class="status-label">מצב דלת:</span>
+            <span id="doorState-ESP01" class="status-value">לא ידוע</span>
+          </div>
+          <div class="btn-row">
+            <button id="openBtn-ESP01" class="open-btn">
+              <span class="btn-icon">🔓</span>
+              <span>פתח ESP01 (1500ms)</span>
+            </button>
+          </div>
+        </div>
 
-  <!-- לוקר ESP02 -->
-  <div class="locker" id="locker-ESP02">
-    <h2>ESP02</h2>
-    <div class="status">
-      סטטוס לוקר (Heartbeat): <span id="lockerOnline-ESP02" class="offline">לא ידוע</span>
+        <!-- לוקר ESP02 -->
+        <div class="locker-card" id="locker-ESP02">
+          <div class="locker-header">
+            <div class="locker-name">ESP02</div>
+            <span class="pill">
+              <span class="dot offline-dot" id="dot-ESP02"></span>
+              <span id="lockerOnline-ESP02" class="offline-text">לא מחובר</span>
+            </span>
+          </div>
+          <div class="status-line">
+            <span class="status-label">מצב דלת:</span>
+            <span id="doorState-ESP02" class="status-value">לא ידוע</span>
+          </div>
+          <div class="btn-row">
+            <button id="openBtn-ESP02" class="open-btn">
+              <span class="btn-icon">🔓</span>
+              <span>פתח ESP02 (1500ms)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-note">
+        העמוד משתמש ב-MQTT דרך WebSocket בלבד – Base44 ממשיך לעבוד כרגיל ברקע.
+      </div>
     </div>
-    <div class="status">
-      מצב דלת: <span id="doorState-ESP02">לא ידוע</span>
-    </div>
-    <button id="openBtn-ESP02">פתח לוקר ESP02 (1500ms)</button>
   </div>
 
   <script>
     // ===== הגדרות MQTT – כמו ב-ESP =====
-    const MQTT_HOST = "j78ab272.ala.eu-central-1.emqxsl.com"; // אותו host כמו בקוד
-    const MQTT_PORT = 8084;        // WebSocket TLS port ב-EMQX (לבדוק בפאנל אם צריך)
-    const MQTT_PATH = "/mqtt";     // ברירת מחדל ב-EMQX
+    const MQTT_HOST = "j78ab272.ala.eu-central-1.emqxsl.com"; // כמו בקוד ESP
+    const MQTT_PORT = 8084;        // WebSocket TLS port ב-EMQX (לבדוק בפאנל אם שונה)
+    const MQTT_PATH = "/mqtt";     // לרוב /mqtt ב-EMQX
 
     const MQTT_USER = "udi";       // כמו ב-ESP
-    const MQTT_PASS = "ABCD1414";  // שים לב שזה חשוף – עדיף יוזר מוגבל אם תרצה בהמשך
+    const MQTT_PASS = "ABCD1414";  // שים לב: חשוף בקוד – אפשר ליצור יוזר Web ייעודי
 
     // -------- הגדרת שני לוקרים ----------
     const lockers = {
@@ -107,7 +287,8 @@
     };
 
     // ===== DOM elements כלליים =====
-    const mqttStatusEl = document.getElementById("mqttStatus");
+    const mqttStatusText = document.getElementById("mqttStatusText");
+    const mqttStatusDot  = document.getElementById("mqttStatusDot");
 
     // ===== הכנת topicים ואלמנטים לכל לוקר =====
     for (const id in lockers) {
@@ -117,11 +298,11 @@
       locker.topics.hb    = `esp/${id}/heartbeat`;
       locker.topics.state = `esp/${id}/box/${locker.boxId}/state`;
 
-      locker.elements.online = document.getElementById(`lockerOnline-${id}`);
-      locker.elements.door   = document.getElementById(`doorState-${id}`);
-      locker.elements.button = document.getElementById(`openBtn-${id}`);
+      locker.elements.onlineText = document.getElementById(`lockerOnline-${id}`);
+      locker.elements.door       = document.getElementById(`doorState-${id}`);
+      locker.elements.button     = document.getElementById(`openBtn-${id}`);
+      locker.elements.dot        = document.getElementById(`dot-${id}`);
 
-      // כפתור פתיחה לכל לוקר
       locker.elements.button.addEventListener("click", () => {
         if (!client.connected) {
           alert("לא מחובר ל-MQTT");
@@ -147,10 +328,11 @@
 
     client.on("connect", () => {
       console.log("MQTT connected");
-      mqttStatusEl.textContent = "מחובר";
-      mqttStatusEl.className = "online";
+      mqttStatusText.textContent = "מחובר";
+      mqttStatusDot.classList.remove("offline-dot");
+      mqttStatusDot.classList.add("online-dot");
 
-      // נרשמים לכל heartbeat + state של שני הלוקרים
+      // subscribe לכל הלוקרים
       for (const id in lockers) {
         const locker = lockers[id];
         client.subscribe(locker.topics.hb, (err) => {
@@ -164,46 +346,53 @@
 
     client.on("reconnect", () => {
       console.log("MQTT reconnecting...");
-      mqttStatusEl.textContent = "מנסה להתחבר...";
-      mqttStatusEl.className = "offline";
+      mqttStatusText.textContent = "מנסה להתחבר...";
+      mqttStatusDot.classList.remove("online-dot");
+      mqttStatusDot.classList.add("offline-dot");
     });
 
     client.on("error", (err) => {
       console.error("MQTT error:", err);
-      mqttStatusEl.textContent = "שגיאה בחיבור";
-      mqttStatusEl.className = "offline";
+      mqttStatusText.textContent = "שגיאה בחיבור";
+      mqttStatusDot.classList.remove("online-dot");
+      mqttStatusDot.classList.add("offline-dot");
     });
 
     client.on("close", () => {
       console.log("MQTT connection closed");
-      mqttStatusEl.textContent = "מנותק";
-      mqttStatusEl.className = "offline";
+      mqttStatusText.textContent = "מנותק";
+      mqttStatusDot.classList.remove("online-dot");
+      mqttStatusDot.classList.add("offline-dot");
     });
 
     client.on("message", (topic, message) => {
       const msg = message.toString();
       console.log("MQTT message:", topic, msg);
 
-      // בודקים לאיזה לוקר שייך ה-topic
       for (const id in lockers) {
         const locker = lockers[id];
 
         if (topic === locker.topics.hb) {
-          // Heartbeat
           locker.lastHeartbeat = Date.now();
-          locker.elements.online.textContent = "מחובר";
-          locker.elements.online.className = "online";
+          locker.elements.onlineText.textContent = "מחובר";
+          locker.elements.onlineText.classList.remove("offline-text");
+          locker.elements.onlineText.classList.add("online-text");
+          locker.elements.dot.classList.remove("offline-dot");
+          locker.elements.dot.classList.add("online-dot");
           return;
         }
 
         if (topic === locker.topics.state) {
-          // מצב דלת
           try {
             const obj = JSON.parse(msg);
             if (obj.doorOpen === true) {
               locker.elements.door.textContent = "פתוחה";
+              locker.elements.door.classList.remove("door-closed");
+              locker.elements.door.classList.add("door-open");
             } else if (obj.doorOpen === false) {
               locker.elements.door.textContent = "סגורה";
+              locker.elements.door.classList.remove("door-open");
+              locker.elements.door.classList.add("door-closed");
             } else {
               locker.elements.door.textContent = msg;
             }
@@ -216,7 +405,7 @@
       }
     });
 
-    // ===== בדיקת Heartbeat – אם עבר יותר מדי זמן, מסמנים Offline =====
+    // ===== בדיקת Heartbeat – להפוך לאוף־ליין אם עובר זמן רב =====
     setInterval(() => {
       const now = Date.now();
       for (const id in lockers) {
@@ -224,9 +413,12 @@
         if (!locker.lastHeartbeat) continue;
 
         const diff = now - locker.lastHeartbeat;
-        if (diff > 70000) { // יותר מ~70 שניות בלי heartbeat
-          locker.elements.online.textContent = "לא מחובר (אין Heartbeat)";
-          locker.elements.online.className = "offline";
+        if (diff > 70000) { // יותר מ~70 שניות
+          locker.elements.onlineText.textContent = "לא מחובר (אין Heartbeat)";
+          locker.elements.onlineText.classList.remove("online-text");
+          locker.elements.onlineText.classList.add("offline-text");
+          locker.elements.dot.classList.remove("online-dot");
+          locker.elements.dot.classList.add("offline-dot");
         }
       }
     }, 5000);

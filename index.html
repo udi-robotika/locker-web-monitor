@@ -2,13 +2,18 @@
 <html lang="he">
 <head>
   <meta charset="UTF-8" />
-  <title>Locker Monitor ESP02/ESP01</title>
+  <title>Locker Monitor ESP01 & ESP02</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
     body {
       font-family: Arial, sans-serif;
       direction: rtl;
       margin: 20px;
+      background: #111;
+      color: #eee;
+    }
+    h1 {
+      margin-bottom: 20px;
     }
     .status {
       margin-bottom: 10px;
@@ -16,70 +21,119 @@
     .status span {
       font-weight: bold;
     }
-    button {
-      padding: 10px 20px;
-      font-size: 16px;
-      margin-top: 10px;
-      cursor: pointer;
-    }
     .online {
-      color: green;
+      color: #00e676;
       font-weight: bold;
     }
     .offline {
-      color: red;
+      color: #ff5252;
       font-weight: bold;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 15px;
+      margin-top: 10px;
+      cursor: pointer;
+      border-radius: 6px;
+      border: none;
+    }
+    .locker {
+      border: 1px solid #444;
+      border-radius: 10px;
+      padding: 15px;
+      margin-top: 15px;
+      background: #1c1c1c;
+    }
+    .locker h2 {
+      margin-top: 0;
+      margin-bottom: 10px;
     }
   </style>
 </head>
 <body>
-  <h1>לוקר – חיווי ופתיחה</h1>
+  <h1>לוקרים – ESP01 + ESP02</h1>
 
   <div class="status">
-    סטטוס MQTT: <span id="mqttStatus" class="offline">מנסה להתחבר...</span>
+    סטטוס חיבור MQTT כללי: <span id="mqttStatus" class="offline">מנסה להתחבר...</span>
   </div>
 
-  <div class="status">
-    סטטוס לוקר (Heartbeat): <span id="lockerOnline" class="offline">לא ידוע</span>
+  <!-- לוקר ESP01 -->
+  <div class="locker" id="locker-ESP01">
+    <h2>ESP01</h2>
+    <div class="status">
+      סטטוס לוקר (Heartbeat): <span id="lockerOnline-ESP01" class="offline">לא ידוע</span>
+    </div>
+    <div class="status">
+      מצב דלת: <span id="doorState-ESP01">לא ידוע</span>
+    </div>
+    <button id="openBtn-ESP01">פתח לוקר ESP01 (1500ms)</button>
   </div>
 
-  <div class="status">
-    מצב דלת: <span id="doorState">לא ידוע</span>
+  <!-- לוקר ESP02 -->
+  <div class="locker" id="locker-ESP02">
+    <h2>ESP02</h2>
+    <div class="status">
+      סטטוס לוקר (Heartbeat): <span id="lockerOnline-ESP02" class="offline">לא ידוע</span>
+    </div>
+    <div class="status">
+      מצב דלת: <span id="doorState-ESP02">לא ידוע</span>
+    </div>
+    <button id="openBtn-ESP02">פתח לוקר ESP02 (1500ms)</button>
   </div>
-
-  <div class="status">
-    לוקר נוכחי: <span id="lockerId"></span>
-  </div>
-
-  <button id="openBtn">פתח לוקר (1500ms)</button>
 
   <script>
-    // ===== הגדרות MQTT – להתאים ל-EMQX שלך =====
-    const MQTT_HOST = "j78ab272.ala.eu-central-1.emqxsl.com"; // כמו בקוד ESP
-    const MQTT_PORT = 8084;  // WebSocket TLS port (לבדוק ב-EMQX)
-    const MQTT_PATH = "/mqtt";
+    // ===== הגדרות MQTT – כמו ב-ESP =====
+    const MQTT_HOST = "j78ab272.ala.eu-central-1.emqxsl.com"; // אותו host כמו בקוד
+    const MQTT_PORT = 8084;        // WebSocket TLS port ב-EMQX (לבדוק בפאנל אם צריך)
+    const MQTT_PATH = "/mqtt";     // ברירת מחדל ב-EMQX
 
-    const MQTT_USER = "udi";       // כמו ב-ESP או יוזר ייעודי לדפדפן
-    const MQTT_PASS = "ABCD1414";  // שים לב שזה חשוף – עדיף יוזר עם הרשאות מוגבלות
+    const MQTT_USER = "udi";       // כמו ב-ESP
+    const MQTT_PASS = "ABCD1414";  // שים לב שזה חשוף – עדיף יוזר מוגבל אם תרצה בהמשך
 
-    // תבחר איזה ESP אתה רוצה לנטר/לשלוט – ESP01 או ESP02
-    const ESP_ID   = "ESP01";  // למשל
-    const BOX_ID   = "1";
+    // -------- הגדרת שני לוקרים ----------
+    const lockers = {
+      ESP01: {
+        boxId: "1",
+        topics: {},
+        elements: {},
+        lastHeartbeat: null,
+      },
+      ESP02: {
+        boxId: "1",
+        topics: {},
+        elements: {},
+        lastHeartbeat: null,
+      },
+    };
 
-    const TOPIC_CMD       = `esp/${ESP_ID}/box/${BOX_ID}/cmd`;
-    const TOPIC_HEARTBEAT = `esp/${ESP_ID}/heartbeat`;
-    const TOPIC_DOORSTATE = `esp/${ESP_ID}/box/${BOX_ID}/state`;
+    // ===== DOM elements כלליים =====
+    const mqttStatusEl = document.getElementById("mqttStatus");
 
-    // ===== DOM elements =====
-    const mqttStatusEl   = document.getElementById("mqttStatus");
-    const lockerOnlineEl = document.getElementById("lockerOnline");
-    const doorStateEl    = document.getElementById("doorState");
-    const openBtn        = document.getElementById("openBtn");
-    const lockerIdEl     = document.getElementById("lockerId");
+    // ===== הכנת topicים ואלמנטים לכל לוקר =====
+    for (const id in lockers) {
+      const locker = lockers[id];
 
-    lockerIdEl.textContent = `${ESP_ID} / box ${BOX_ID}`;
+      locker.topics.cmd   = `esp/${id}/box/${locker.boxId}/cmd`;
+      locker.topics.hb    = `esp/${id}/heartbeat`;
+      locker.topics.state = `esp/${id}/box/${locker.boxId}/state`;
 
-    // ===== MQTT client =====
+      locker.elements.online = document.getElementById(`lockerOnline-${id}`);
+      locker.elements.door   = document.getElementById(`doorState-${id}`);
+      locker.elements.button = document.getElementById(`openBtn-${id}`);
+
+      // כפתור פתיחה לכל לוקר
+      locker.elements.button.addEventListener("click", () => {
+        if (!client.connected) {
+          alert("לא מחובר ל-MQTT");
+          return;
+        }
+        const payload = "OPEN:1500";
+        client.publish(locker.topics.cmd, payload);
+        console.log(`Sent to ${id}:`, locker.topics.cmd, payload);
+      });
+    }
+
+    // ===== יצירת לקוח MQTT =====
     const clientId = "web-monitor-" + Math.random().toString(16).substr(2, 8);
     const connectUrl = `wss://${MQTT_HOST}:${MQTT_PORT}${MQTT_PATH}`;
 
@@ -88,24 +142,24 @@
       username: MQTT_USER,
       password: MQTT_PASS,
       clean: true,
-      reconnectPeriod: 2000
+      reconnectPeriod: 2000,
     });
-
-    // נשמור זמן אחרון של heartbeat כדי לדעת אם הלוקר "חי"
-    let lastHeartbeatTime = null;
 
     client.on("connect", () => {
       console.log("MQTT connected");
       mqttStatusEl.textContent = "מחובר";
       mqttStatusEl.className = "online";
 
-      client.subscribe(TOPIC_HEARTBEAT, (err) => {
-        if (!err) console.log("Subscribed to heartbeat:", TOPIC_HEARTBEAT);
-      });
-
-      client.subscribe(TOPIC_DOORSTATE, (err) => {
-        if (!err) console.log("Subscribed to door state:", TOPIC_DOORSTATE);
-      });
+      // נרשמים לכל heartbeat + state של שני הלוקרים
+      for (const id in lockers) {
+        const locker = lockers[id];
+        client.subscribe(locker.topics.hb, (err) => {
+          if (!err) console.log("Subscribed to HB:", locker.topics.hb);
+        });
+        client.subscribe(locker.topics.state, (err) => {
+          if (!err) console.log("Subscribed to STATE:", locker.topics.state);
+        });
+      }
     });
 
     client.on("reconnect", () => {
@@ -130,49 +184,50 @@
       const msg = message.toString();
       console.log("MQTT message:", topic, msg);
 
-      if (topic === TOPIC_HEARTBEAT) {
-        // ה-ESP שולח "ONLINE" כל 30 שניות
-        lastHeartbeatTime = Date.now();
-        lockerOnlineEl.textContent = "מחובר";
-        lockerOnlineEl.className = "online";
-      } else if (topic === TOPIC_DOORSTATE) {
-        // מצפה ל-JSON: {"doorOpen":true/false}
-        try {
-          const obj = JSON.parse(msg);
-          if (obj.doorOpen === true) {
-            doorStateEl.textContent = "פתוחה";
-          } else if (obj.doorOpen === false) {
-            doorStateEl.textContent = "סגורה";
-          } else {
-            doorStateEl.textContent = msg;
+      // בודקים לאיזה לוקר שייך ה-topic
+      for (const id in lockers) {
+        const locker = lockers[id];
+
+        if (topic === locker.topics.hb) {
+          // Heartbeat
+          locker.lastHeartbeat = Date.now();
+          locker.elements.online.textContent = "מחובר";
+          locker.elements.online.className = "online";
+          return;
+        }
+
+        if (topic === locker.topics.state) {
+          // מצב דלת
+          try {
+            const obj = JSON.parse(msg);
+            if (obj.doorOpen === true) {
+              locker.elements.door.textContent = "פתוחה";
+            } else if (obj.doorOpen === false) {
+              locker.elements.door.textContent = "סגורה";
+            } else {
+              locker.elements.door.textContent = msg;
+            }
+          } catch (e) {
+            console.warn("Bad JSON in door state:", msg);
+            locker.elements.door.textContent = msg;
           }
-        } catch (e) {
-          console.warn("Bad JSON in door state:", msg);
-          doorStateEl.textContent = msg;
+          return;
         }
       }
     });
 
-    // ===== כפתור פתיחת לוקר =====
-    openBtn.addEventListener("click", () => {
-      if (!client.connected) {
-        alert("לא מחובר ל-MQTT");
-        return;
-      }
-      const payload = "OPEN:1500";
-      client.publish(TOPIC_CMD, payload);
-      console.log("Sent:", TOPIC_CMD, payload);
-    });
-
-    // ===== בדיקת Heartbeat – אם לא קיבלנו זמן מה, נסמן כלא-מחובר =====
+    // ===== בדיקת Heartbeat – אם עבר יותר מדי זמן, מסמנים Offline =====
     setInterval(() => {
-      if (lastHeartbeatTime === null) return;
+      const now = Date.now();
+      for (const id in lockers) {
+        const locker = lockers[id];
+        if (!locker.lastHeartbeat) continue;
 
-      const diff = Date.now() - lastHeartbeatTime; // מילישניות
-      // אם עברו יותר מ-70 שניות מאז heartbeat אחרון – נניח שהלוקר לא מחובר
-      if (diff > 70000) {
-        lockerOnlineEl.textContent = "לא מחובר (אין Heartbeat)";
-        lockerOnlineEl.className = "offline";
+        const diff = now - locker.lastHeartbeat;
+        if (diff > 70000) { // יותר מ~70 שניות בלי heartbeat
+          locker.elements.online.textContent = "לא מחובר (אין Heartbeat)";
+          locker.elements.online.className = "offline";
+        }
       }
     }, 5000);
   </script>
